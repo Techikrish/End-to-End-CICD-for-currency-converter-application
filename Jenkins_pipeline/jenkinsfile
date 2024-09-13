@@ -1,0 +1,90 @@
+pipeline {
+    agent any
+
+    environment {
+        // Define environment variables
+        SONAR_SCANNER_HOME = tool 'SonarQube Scanner' // Adjust this based on your SonarQube Scanner configuration in Jenkins
+        DOCKERHUB_CREDENTIALS = credentials('dockerhub')
+        DOCKER_IMAGE = "your-dockerhub-username/currency-converter" // Replace with your Docker Hub repo
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                // Checkout the source code from your SCM
+                checkout scm
+            }
+        }
+
+        stage('SonarQube Analysis') {
+            steps {
+                script {
+                    // Run SonarQube analysis
+                    withSonarQubeEnv('SonarQube') { // Replace 'SonarQube' with your SonarQube instance name
+                        sh "${SONAR_SCANNER_HOME}/bin/sonar-scanner -Dsonar.projectKey=currency-converter -Dsonar.sources=. -Dsonar.host.url=${SONAR_HOST_URL} -Dsonar.login=${SONAR_AUTH_TOKEN} -Dsonar.inclusions=**/*.py"
+                    }
+                }
+            }
+        }
+
+        stage('OWASP Dependency Check') {
+            steps {
+                script {
+                    // Run OWASP Dependency Check
+                    dependencyCheck additionalArguments: '--scan . --out . --format XML'
+                }
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                script {
+                    // Build the Docker image
+                    sh 'docker build -t ${DOCKER_IMAGE}:${BUILD_NUMBER} .'
+                }
+            }
+        }
+
+        stage('Push Docker Image') {
+            steps {
+                script {
+                    // Login to Docker Hub and push the image
+                    sh "echo ${DOCKERHUB_CREDENTIALS_PSW} | docker login -u ${DOCKERHUB_CREDENTIALS_USR} --password-stdin"
+                    sh "docker push ${DOCKER_IMAGE}:${BUILD_NUMBER}"
+                }
+            }
+        }
+        
+        stage('Update Kubernetes Manifests') {
+    steps {
+        script {
+            // Assuming you have generated new Kubernetes manifests as part of your build process
+            // Commit and push changes to the Git repository monitored by Argo CD
+            sh """
+            git config user.name 'Jenkins'
+            git config user.email 'jenkins@example.com'
+            git add path/to/manifests
+            git commit -m 'Update Kubernetes manifests for new deployment'
+            git push origin HEAD:main  // Replace 'main' with your branch name if different
+            """
+        }
+    }
+}
+
+    }
+
+    post {
+        always {
+            // Cleanup workspace
+            cleanWs()
+        }
+        success {
+            // Notify on success
+            echo 'Pipeline completed successfully!'
+        }
+        failure {
+            // Notify on failure
+            echo 'Pipeline failed!'
+        }
+    }
+}

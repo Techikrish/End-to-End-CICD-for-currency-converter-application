@@ -1,0 +1,5 @@
+# Exclude specific files
+.terraform.lock.hcl
+
+# Exclude specific directories
+.terraform

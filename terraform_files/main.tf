@@ -198,13 +198,13 @@ resource "aws_security_group" "agent_sonarqube_eks_sg" {
 
 # EC2 instance for Jenkins controller (without Docker)
 resource "aws_instance" "jenkins_controller" {
-  ami                    = "ami-0c55b159cbfafe1f0" # Update for your region
+  ami                    = "ami-09e6f87a47903347c" # Update for your region
   instance_type          = "t2.micro"
   subnet_id              = aws_subnet.public[0].id
   vpc_security_group_ids = [aws_security_group.jenkins_controller_sg.id]
   iam_instance_profile   = aws_iam_instance_profile.ec2_instance_profile.name
   associate_public_ip_address = true
-  key_name               = "my-key" # Replace with your EC2 key pair name
+  key_name               = "jenkins" # Replace with your EC2 key pair name
 
   user_data = <<-EOF
               #!/bin/bash
@@ -246,13 +246,13 @@ resource "aws_instance" "jenkins_controller" {
 
 # EC2 instance for Jenkins agent, SonarQube, Trivy, OWASP
 resource "aws_instance" "agent_sonarqube" {
-  ami                    = "ami-0c55b159cbfafe1f0" # Update for your region
+  ami                    = "ami-09e6f87a47903347c" # Update for your region
   instance_type          = "t2.medium"
   subnet_id              = aws_subnet.public[1].id
   vpc_security_group_ids = [aws_security_group.agent_sonarqube_eks_sg.id]
   iam_instance_profile   = aws_iam_instance_profile.ec2_instance_profile.name
   associate_public_ip_address = true
-  key_name               = "my-key" # Replace with your EC2 key pair name
+  key_name               = "jenkins" # Replace with your EC2 key pair name
 
   user_data = <<-EOF
               #!/bin/bash

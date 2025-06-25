@@ -1,90 +1,93 @@
 pipeline {
-    agent any
-
-    environment {
-        // Define environment variables
-        SONAR_SCANNER_HOME = tool 'SonarQube Scanner' // Adjust this based on your SonarQube Scanner configuration in Jenkins
-        DOCKERHUB_CREDENTIALS = credentials('dockerhub')
-        DOCKER_IMAGE = "your-dockerhub-username/currency-converter" // Replace with your Docker Hub repo
+    agent {
+        label 'agent-1'
     }
-
+    environment {
+        DOCKER_HUB_REGISTRY = 'docker.io'
+        DOCKER_HUB_REPO = 'techikrish/currency-converter-application'
+        IMAGE_TAG = "${env.BUILD_NUMBER}"
+        DOCKER_CREDENTIALS_ID = 'docker-hub-credentials'
+        GIT_CREDENTIALS_ID = 'github-ssh'
+    }
     stages {
         stage('Checkout') {
             steps {
-                // Checkout the source code from your SCM
-                checkout scm
+                git url: 'https://github.com/Techikrish/End-to-End-CICD-for-currency-converter-application.git', branch: 'main'
             }
         }
-
+        stage('Run Tests') {
+            steps {
+                sh 'cd application && python3 -m unittest discover tests'
+            }
+        }
+        stage('OWASP Dependency-Check') {
+            steps {
+                sh '''
+                /opt/dependency-check/bin/dependency-check.sh \
+                --scan application/requirements.txt \
+                --format HTML \
+                --out dependency-check-report.html \
+                --failOnCVSS 7
+                '''
+                archiveArtifacts artifacts: 'dependency-check-report.html', allowEmptyArchive: true
+            }
+        }
         stage('SonarQube Analysis') {
             steps {
+                withSonarQubeEnv('SonarQube') {
+                    sh 'cd application && /opt/sonar-scanner/bin/sonar-scanner'
+                }
+            }
+        }
+        stage('Build Docker Image') {
+            steps {
                 script {
-                    // Run SonarQube analysis
-                    withSonarQubeEnv('SonarQube') { // Replace 'SonarQube' with your SonarQube instance name
-                        sh "${SONAR_SCANNER_HOME}/bin/sonar-scanner -Dsonar.projectKey=currency-converter -Dsonar.sources=. -Dsonar.host.url=${SONAR_HOST_URL} -Dsonar.login=${SONAR_AUTH_TOKEN} -Dsonar.inclusions=**/*.py"
+                    dir('application') {
+                        docker.build("${DOCKER_HUB_REPO}:${IMAGE_TAG}", ".")
                     }
                 }
             }
         }
-
-        stage('OWASP Dependency Check') {
+        stage('Trivy Scan') {
             steps {
-                script {
-                    // Run OWASP Dependency Check
-                    dependencyCheck additionalArguments: '--scan . --out . --format XML'
+                sh '''
+                trivy image --exit-code 1 --severity CRITICAL \
+                ${DOCKER_HUB_REPO}:${IMAGE_TAG} > trivy-report.txt
+                '''
+                archiveArtifacts artifacts: 'trivy-report.txt', allowEmptyArchive: true
+            }
+        }
+        stage('Push to Docker Hub') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: DOCKER_CREDENTIALS_ID, usernameVariable: 'DOCKER_USERNAME', passwordVariable: 'DOCKER_PASSWORD')]) {
+                    script {
+                        sh "echo $DOCKER_PASSWORD | docker login -u $DOCKER_USERNAME --password-stdin ${DOCKER_HUB_REGISTRY}"
+                        docker.image("${DOCKER_HUB_REPO}:${IMAGE_TAG}").push()
+                        docker.image("${DOCKER_HUB_REPO}:${IMAGE_TAG}").push('latest')
+                    }
                 }
             }
         }
-
-        stage('Build Docker Image') {
+        stage('Update Kubernetes Manifest') {
             steps {
-                script {
-                    // Build the Docker image
-                    sh 'docker build -t ${DOCKER_IMAGE}:${BUILD_NUMBER} .'
+                withCredentials([sshUserPrivateKey(credentialsId: GIT_CREDENTIALS_ID, keyFileVariable: 'SSH_KEY')]) {
+                    sh '''
+                    export GIT_SSH_COMMAND="ssh -i $SSH_KEY"
+                    sed -i "s|image:.*|image: ${DOCKER_HUB_REPO}:${IMAGE_TAG}|" kubernetes-files/deployment.yaml
+                    git config user.email "jenkins@ci.com"
+                    git config user.name "Jenkins"
+                    git add kubernetes-files/deployment.yaml
+                    git commit -m "Update image tag to ${IMAGE_TAG} [skip ci]"
+                    git push origin main
+                    '''
                 }
             }
-        }
-
-        stage('Push Docker Image') {
-            steps {
-                script {
-                    // Login to Docker Hub and push the image
-                    sh "echo ${DOCKERHUB_CREDENTIALS_PSW} | docker login -u ${DOCKERHUB_CREDENTIALS_USR} --password-stdin"
-                    sh "docker push ${DOCKER_IMAGE}:${BUILD_NUMBER}"
-                }
-            }
-        }
-        
-        stage('Update Kubernetes Manifests') {
-    steps {
-        script {
-            // Assuming you have generated new Kubernetes manifests as part of your build process
-            // Commit and push changes to the Git repository monitored by Argo CD
-            sh """
-            git config user.name 'Jenkins'
-            git config user.email 'jenkins@example.com'
-            git add path/to/manifests
-            git commit -m 'Update Kubernetes manifests for new deployment'
-            git push origin HEAD:main  // Replace 'main' with your branch name if different
-            """
         }
     }
-}
-
-    }
-
     post {
         always {
-            // Cleanup workspace
-            cleanWs()
-        }
-        success {
-            // Notify on success
-            echo 'Pipeline completed successfully!'
-        }
-        failure {
-            // Notify on failure
-            echo 'Pipeline failed!'
+            dependencyCheckPublisher pattern: 'dependency-check-report.html'
+            recordIssues tool: issues(pattern: 'trivy-report.txt', name: 'Trivy')
         }
     }
 }

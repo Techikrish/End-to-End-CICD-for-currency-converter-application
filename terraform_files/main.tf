@@ -206,13 +206,13 @@ resource "aws_security_group" "agent_sonarqube_eks_sg" {
 
 # EC2 instance for Jenkins controller
 resource "aws_instance" "jenkins_controller" {
-  ami                    = "ami-0e6b4e4a4e2f5b7c0" # Ubuntu 20.04 LTS in us-east-1, verify latest
+  ami                    = "ami-020cba7c55df1f615" # Ubuntu 20.04 LTS in us-east-1, verify latest
   instance_type          = "t2.micro"
   subnet_id              = aws_subnet.public[0].id
   vpc_security_group_ids = [aws_security_group.jenkins_controller_sg.id]
   iam_instance_profile   = aws_iam_instance_profile.ec2_instance_profile.name
   associate_public_ip_address = true
-  key_name               = "my-key" # Replace with your EC2 key pair name
+  key_name               = "jenkins" # Replace with your EC2 key pair name
 
   # Root volume
   root_block_device {
@@ -229,13 +229,13 @@ resource "aws_instance" "jenkins_controller" {
 
 # EC2 instance for Jenkins agent, SonarQube, Trivy, OWASP
 resource "aws_instance" "agent_sonarqube" {
-  ami                    = "ami-0e6b4e4a4e2f5b7c0" # Ubuntu 20.04 LTS in us-east-1, verify latest
+  ami                    = "ami-020cba7c55df1f615" # Ubuntu 20.04 LTS in us-east-1, verify latest
   instance_type          = "t3.medium"
   subnet_id              = aws_subnet.public[1].id
   vpc_security_group_ids = [aws_security_group.agent_sonarqube_eks_sg.id]
   iam_instance_profile   = aws_iam_instance_profile.ec2_instance_profile.name
   associate_public_ip_address = true
-  key_name               = "my-key" # Replace with your EC2 key pair name
+  key_name               = "jenkins" # Replace with your EC2 key pair name
 
   # Root volume
   root_block_device {

@@ -1,7 +1,17 @@
 # Configuring the AWS provider
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+}
+
 provider "aws" {
   region = var.region
 }
+
 
 # Creating a VPC with only public subnets
 resource "aws_vpc" "main" {
@@ -316,7 +326,7 @@ resource "aws_instance" "agent_sonarqube" {
 # EKS Cluster in public subnets
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
-  version = "19.15.3"
+  version = "20.0"
 
   cluster_name    = "currency-converter-cluster"
   cluster_version = "1.29"

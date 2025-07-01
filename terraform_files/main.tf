@@ -7,11 +7,9 @@ terraform {
     }
   }
 }
-
 provider "aws" {
   region = var.region
 }
-
 
 # Creating a VPC with only public subnets
 resource "aws_vpc" "main" {
@@ -206,46 +204,21 @@ resource "aws_security_group" "agent_sonarqube_eks_sg" {
   }
 }
 
-# EC2 instance for Jenkins controller (without Docker)
+# EC2 instance for Jenkins controller
 resource "aws_instance" "jenkins_controller" {
-  ami                    = "ami-09e6f87a47903347c" # Update for your region
+  ami                    = "ami-0e6b4e4a4e2f5b7c0" # Ubuntu 20.04 LTS in us-east-1, verify latest
   instance_type          = "t2.micro"
   subnet_id              = aws_subnet.public[0].id
   vpc_security_group_ids = [aws_security_group.jenkins_controller_sg.id]
   iam_instance_profile   = aws_iam_instance_profile.ec2_instance_profile.name
   associate_public_ip_address = true
-  key_name               = "jenkins" # Replace with your EC2 key pair name
+  key_name               = "my-key" # Replace with your EC2 key pair name
 
-  user_data = <<-EOF
-              #!/bin/bash
-              yum update -y
-              yum install -y java-11-openjdk wget
-
-              # Add swap space
-              dd if=/dev/zero of=/swapfile bs=1M count=1024
-              chmod 600 /swapfile
-              mkswap /swapfile
-              swapon /swapfile
-              echo '/swapfile swap swap defaults 0 0' >> /etc/fstab
-
-              # Install AWS CLI
-              curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-              unzip awscliv2.zip
-              ./aws/install
-              rm -rf awscliv2.zip aws
-
-              # Install kubectl
-              curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-              chmod +x kubectl
-              mv kubectl /usr/local/bin/
-
-              # Install Jenkins
-              wget -O /etc/yum.repos.d/jenkins.repo https://pkg.jenkins.io/redhat-stable/jenkins.repo
-              rpm --import https://pkg.jenkins.io/redhat-stable/jenkins.io.key
-              yum install -y jenkins
-              systemctl start jenkins
-              systemctl enable jenkins
-              EOF
+  # Root volume
+  root_block_device {
+    volume_size = 10
+    volume_type = "gp3"
+  }
 
   tags = {
     Name        = "jenkins-controller"
@@ -256,65 +229,20 @@ resource "aws_instance" "jenkins_controller" {
 
 # EC2 instance for Jenkins agent, SonarQube, Trivy, OWASP
 resource "aws_instance" "agent_sonarqube" {
-  ami                    = "ami-09e6f87a47903347c" # Update for your region
-  instance_type          = "t2.medium"
+  ami                    = "ami-0e6b4e4a4e2f5b7c0" # Ubuntu 20.04 LTS in us-east-1, verify latest
+  instance_type          = "t3.medium"
   subnet_id              = aws_subnet.public[1].id
   vpc_security_group_ids = [aws_security_group.agent_sonarqube_eks_sg.id]
   iam_instance_profile   = aws_iam_instance_profile.ec2_instance_profile.name
   associate_public_ip_address = true
-  key_name               = "jenkins" # Replace with your EC2 key pair name
+  key_name               = "my-key" # Replace with your EC2 key pair name
 
-  user_data = <<-EOF
-              #!/bin/bash
-              yum update -y
-              yum install -y docker java-11-openjdk python3 git unzip
-
-              # Install Docker
-              systemctl start docker
-              systemctl enable docker
-              usermod -aG docker ec2-user
-
-              # Add swap space (8 GiB for t2.medium)
-              dd if=/dev/zero of=/swapfile bs=1M count=8192
-              chmod 600 /swapfile
-              mkswap /swapfile
-              swapon /swapfile
-              echo '/swapfile swap swap defaults 0 0' >> /etc/fstab
-
-              # Install AWS CLI
-              curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-              unzip awscliv2.zip
-              ./aws/install
-              rm -rf awscliv2.zip aws
-
-              # Install kubectl
-              curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-              chmod +x kubectl
-              mv kubectl /usr/local/bin/
-
-              # Install SonarQube scanner
-              curl -LO https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006-linux.zip
-              unzip sonar-scanner-cli-5.0.1.3006-linux.zip
-              mv sonar-scanner-5.0.1.3006 /opt/sonar-scanner
-              echo 'export PATH=/opt/sonar-scanner/bin:$PATH' >> /home/ec2-user/.bashrc
-
-              # Install Trivy
-              rpm -ivh https://github.com/aquasecurity/trivy/releases/download/v0.45.1/trivy_0.45.1_Linux-64bit.rpm
-              trivy --version
-
-              # Install OWASP Dependency-Check
-              curl -LO https://github.com/jeremylong/DependencyCheck/releases/download/v9.2.0/dependency-check-9.2.0-release.zip
-              unzip dependency-check-9.2.0-release.zip
-              mv dependency-check /opt/dependency-check
-              echo 'export PATH=/opt/dependency-check/bin:$PATH' >> /home/ec2-user/.bashrc
-
-              # Install SonarQube server
-              docker run -d -p 9000:9000 --name sonarqube sonarqube:latest
-
-              # Generate SSH key for Jenkins agent
-              su - ec2-user -c "ssh-keygen -t rsa -b 4096 -C 'jenkins-agent@ci.com' -f /home/ec2-user/.ssh/id_rsa -N ''"
-              chown ec2-user:ec2-user /home/ec2-user/.ssh/id_rsa*
-              EOF
+  # Root volume
+  root_block_device {
+    volume_size = 20
+    volume_type = "gp3"
+  }
+  
 
   tags = {
     Name        = "agent-sonarqube"
